@@ -1,2 +1,3 @@
-# writeups
-Random writeups on topic I enjoy. Could be extremely long or super short.
+# Write-Ups
+Random writeups on topic I enjoy.  
+Could be extremely long or super short.
