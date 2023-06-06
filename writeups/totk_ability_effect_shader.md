@@ -118,7 +118,7 @@ Which yields this effect:
 
 Now I'm fairly certain that this is as far as it goes in TotK and they're just smart with how they mask it with textures, but the issues with this technique start to pop up when you `step` the sine function.
 
-![](https://github.com/kryzp/writeups/blob/main/res/totk_ability_effect_shader_2.mp4)
+https://github.com/kryzp/writeups/assets/48471657/a6128df6-1c06-4093-bcd0-9df61842a0f5
 
 This sudden speed-up is happening because we're essentially colorizing the outline of an expanding sphere, and when it hits straight edges like that it rapidly takes up a lot of the space. But this doesn't look right when we consider that the particles are meant to be expanding from the players feet outwards, so they shouldn't suddenly gain lots of velocity when moving around an edge. In TotK, they actually *do* do this when they hit walls at sharp 90º angles, it's just hard to tell because they're already moving at a relatively slow speed anyways, and clever masking with textures.  
 
