@@ -114,7 +114,7 @@ void main()
 
 Which yields this effect:
 
-![]()
+![](https://github.com/kryzp/writeups/blob/main/res/totk_ability_effect_shader_0.png)
 
 Now I'm fairly certain that this is as far as it goes in TotK and they're just smart with how they mask it with textures, but the issues with this technique start to pop up when you `step` the sine function.
 
@@ -191,4 +191,4 @@ float manhattanDistanceBetween(vec3 a, vec3 b)
 float dist = manhattanDistanceBetween(worldPosition, u_position);
 ```
 
-![]()
+![](https://github.com/kryzp/writeups/blob/main/res/totk_ability_effect_shader_1.png)
