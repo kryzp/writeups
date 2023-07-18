@@ -1,9 +1,11 @@
 # Zelda Tears of the Kingdom Ability Effect Shader
 
+Hello! This is something I haven't yet finished, because it turns out I had school and this turned out to be some kind of pandoras box I opened because dear god this effect is so much more advanced (and "mathemagial" (ok I'll leave the room now)) than it lets on, and I intend to re-visit this old writeup with my proper findings, which use a lot more maths. Anyways enjoy reading whatever is below:
+
 ## Literature
  * [Decal deferred rendering](https://mtnphil.wordpress.com/2014/05/24/decals-deferred-rendering/)
  * [LearnOpenGL deferred rendering summary](https://learnopengl.com/Advanced-Lighting/Deferred-Shading)
- * [Computing normals without normals - unrelated but pretty cool](https://c0de517e.blogspot.com/2008/10/normals-without-normals.html)
+ * [Computing normals... without normals - unrelated but pretty cool](https://c0de517e.blogspot.com/2008/10/normals-without-normals.html)
 
 ## Intro
 One thing that caught my eye when first playing Zelda: Tears of the Kingdom is the shader developed which gets overlayed on the screen when rendering the world when the player uses hand-based abilities:  
@@ -120,17 +122,24 @@ It looks alright, but there's definately something off about it. The issues with
 
 https://github.com/kryzp/writeups/assets/48471657/a6128df6-1c06-4093-bcd0-9df61842a0f5
 
-This sudden speed-up is happening because we're essentially colorizing the outline of an expanding sphere, and when it hits straight edges like that it rapidly takes up a lot of the space. But this doesn't look right when we consider that the particles are meant to be expanding from the players feet outwards, so they shouldn't suddenly gain lots of velocity when moving around an edge. In TotK, they actually *do* do this when they hit walls at sharp 90º angles, it's just hard to tell because they're already moving at a relatively slow speed anyways, and clever masking with textures.  
+This sudden speed-up is happening because we're essentially colorizing the outline of an expanding sphere, and when it hits straight edges like that it rapidly takes up a lot of the space. But this doesn't look right when we consider that the particles are meant to be expanding from the players feet outwards, so they shouldn't suddenly gain lots of velocity when moving around an edge. 
 
-The solution to this is to somehow compute the actual real "travelling" distance they'd need to travel, instead of an approximation to it by just taking the direct euclidean distance. If you want maths terms, we're looking for a function $s(\vec{a}, \vec{b}) \to \mathbb{R}$ which gives us the real minimum distance between position vectors $\vec{a}$ and $\vec{b}$.  
+The solution to this is to somehow compute the actual real "travelling" distance they'd need to travel, instead of an approximation to it by just taking the direct euclidean distance. If you want maths terms, we're looking for a function $s(\vec{a}, \vec{b}) \to \mathbb{R}$ which gives us the real minimum distance between position vectors $\vec{a}$ and $\vec{b}$ accounting for geometry.  
 
-My first idea:
-1. Lerp a vector between `u_position` and `worldPosition` in a numeric integral of `t` between 0 and 1
-2. Take said vector, reproject it, then use that projected vector's `.xy` coordinates to sample the depth buffer
-3. Form a new vector by passing the depth value sampled into `depthToWorld`
-4. Take the distance between the new vector and the previous vector (initially `u_position`)
-5. Add that distance onto the final distance sum
-6. Repeat for all values of `t` between 0 and 1 using an appropriate `dt`
+My *first* (bad) idea:  
+
+ 1. Lerp a vector between `u_position` and `worldPosition` in a numeric integral of `t` between 0 and 1
+ 2. Take said vector, reproject it, then use that projected vector's `.xy` coordinates to sample the depth buffer
+ 3. Form a new vector by passing the depth value sampled into `depthToWorld`
+ 4. Take the distance between the new vector and the previous vector (initially `u_position`)
+ 5. Add that distance onto the final distance sum
+ 6. Repeat for all values of `t` between 0 and 1 using an appropriate `dt`
+
+Here it is in maths notation because maths notation makes me look really smart:
+
+$$
+    \ell = \int_{0}^{1}{s\left(\vec{a} + t \ \left(\vec{b} - \vec{a}\right)\right) \ \mathrm{d}t}
+$$
 
 ```glsl
 float travellingDistanceBetween(vec3 a, vec3 b)
@@ -201,41 +210,60 @@ This works pretty damn well. The particles naturally curve around the terrain wi
 
 ![](https://github.com/kryzp/writeups/blob/main/res/totk_ability_effect_shader_3.png)
 
-The code:
+So, how does it work?  
+It all begins with a new type of texture: `u_curvatureTexture` which is generated like so:
 
 ```glsl
-layout (binding = 1) uniform sampler2D u_normalTexture;
+layout (location = 2) in vec3 i_normal; // world normals! not tangent space
 
-uniform vec3 u_cameraRight;
-uniform vec3 u_cameraUp; // usually just (0, 1, 0)
+layout (location = 2) out vec4 o_curvature;
+
+uniform vec3 u_camUp;
+uniform vec3 u_camRight;
+
+// ...
+
+o_curvature = vec4((dot(i_normal, u_camRight) + 1.0) * 0.5, (dot(i_normal, u_camUp) + 1.0) * 0.5, 0.0, 1.0);
+```
+
+I wasn't sure what else to call it and quite frankly "curvature" is quite misleading but I'm not sure what else to call it. Intuitively, you could imagine two global lights at each edge of the viewport (left/right or top/bottom) shining towards the center on it, and the value is how bright it is. Basically, imagine a sun light on each side of the viewport and write the horizontal shadows to the red channel, and the vertical shadows to the green channel, the more exposed a pixel to the global sun, the brighter the pixel. Also, the geometry doesn't cast any shadows on itself in this intuition.  
+
+It is important to note that since all the vectors on the curvature texture it are unit vectors then:
+
+$$
+    x^2 + y^2 + z^2 \equiv 1
+    \therefore 1 - (x^2 + y^2) = z^2
+$$
+
+This is important for later.  
+Now in the actual shader for the effect:
+
+```glsl
+layout (binding = 2) uniform sampler2D u_curvatureTexture;
 
 // ...
 
 vec3 worldPosition = depthToWorld(i_texCoord);
-vec3 worldNormHere = texture(u_normalTexture, i_texCoord).xyz;
+vec3 curvatureHere = texture(u_normalTexture, i_texCoord).xy;
 
 vec3 originToWorldPosition = worldPosition - u_position;
 
-float horiNorm = abs(dot(worldNormHere, u_cameraRight));
-float vertNorm = abs(dot(worldNormHere, u_cameraUp));
+float curvatureXYSquared = curvatureHere.x*curvatureHere.x + curvatureHere.y*curvatureHere.y;
+float curvatureZSquared = 1.0 - curvatureXYSquared;
 
-float lenSqr = horiNorm*horiNorm + vertNorm*vertNorm;
-float virtualDistanceSqr = (2.0 * lenSqr) - 1.0;
+curvatureZSquared = 0.5 * (curvatureSquared + 1.0);
 
-vec3 vecA = vec3(vec2(horiNorm, vertNorm) * sqrt(max(0.0, -virtualDistanceSqr)), virtualDistanceSqr);
-vecA = normalize(vecA);
-
-float distX = originToWorldPosition.x - (vecA.x * originToWorldPosition.y);
-float distZ = originToWorldPosition.z - (vecA.z * originToWorldPosition.y);
+float distX = originToWorldPosition.x;
+float distZ = originToWorldPosition.z - (sign(curvatureZSquared) * originToWorldPosition.y);
 
 float dist = sqrt(distX*distX + distZ*distZ);
 
 // ...
 ```
 
-So, how does it work? Well I essentially get the absolute value of the normal at each pixel. Intuitively, you could imagine two global lights at each side of the normal (left/right or top/bottom) shining down on it, and the value is how bright it is. Basically, imagine a sun light on each side of the viewport and write the horizontal shadows to the red channel, and the vertical shadows to the green channel.
+Using the above formula, we solve for `curvatureZSquared`, which we then move into $[0, 1]$ range from $[-1, 1]$ for usage in the vector weights. Calculating the weights just then consists of multiplying the curvature sampled at the pixel by the negativefor the $x$ and $y$ components
 
-Then I take the sum of their squares which gives me a squared length of the 2D vector described by them. I then transform it into the range $\left[-1, 1\right]$ since it's in $\left[0, 1\right]$ range because that's what the horiNorm and vertNorm encode. We then create a new vector with the $x$, $y$ components being the hori and vert components of the normal mulitplied by the negative virtual distance (clamped to never be below 0) (I'm not really sure what to call `virtualDistance`). The $z$ component is just the virtual distance squared. We then normalize our vector and multiply the y component of our originToWorldPosition vector, then subtract that from the distances along $x$ and $z$, which we then use to calculate the final distance by pythagorean theorem.
+Then I take the sum of their squares which gives me a squared length of the 2D vector described by them. I then transform it into the range $\left[-1, 1\right]$ since it's in $\left[0, 1\right]$ range because that's what the `horiNorm` and `vertNorm` encode. We then create a new vector with the $x$, $y$ components being the hori and vert components of the normal mulitplied by the negative virtual distance (clamped to never be below 0) (I'm not really sure what to call `virtualDistanceSqr`). The $z$ component is just the virtual distance squared. We then normalize our vector and multiply the $y$ component of our `originToWorldPosition` vector, then subtract that from the distances along $x$ and $z$, which we then use to calculate the final distance. Essentially we're finding the flat plane distance with the y position getting special treatment.
 
 ## Textures?
 Alright, cool, so there's the different ideas/techniques for the distance function, but how do you know what uv coordinates to use?  
@@ -264,12 +292,4 @@ Here's the particle texture:
 
 And here's the final result:
 
-![]()
-
-There's obviously a lot more you could do here, such as all the fancy noise and extra effects that get layered on top, the tinting of the world, etc... but I was mostly just interested in this part and I want to move onto other projects, so I'm going to leave it here.  
-
-**Note:** this approach has weird reprecussions `u_position` isn't directly (*or close enough to be negligible*) on the geometry. The "projected" expanding waves will still move but only along the geometry, while `u_position` goes straight through it, which leads to the actual particle emit position being nowhere near `u_position`.
-
-Thank you for reading!  
-
-- Kryštof
+![](https://github.com/kryzp/writeups/blob/main/res/totk_ability_effect_shader_6.png)
