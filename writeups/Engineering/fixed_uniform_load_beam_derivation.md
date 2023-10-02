@@ -24,7 +24,7 @@ Now we can apply the final boundary condition $y(L) = 0$ and solve for $C_1$ whe
 
 $C_1 = -\frac{qL^2}{12}$
 
-So we know that $M(x) = -\frac{F}{2} \left( x \left( x - L \right) + \frac{L^2}{6} \right)$!
+So we know that $M(x) = -\frac{q}{2} \left( x \left( x - L \right) + \frac{L^2}{6} \right)$!
 
 This also has the benefit that now you know $y(x)$, so you can also calculate the deflection at each point in the beam, or just make a cool Desmos graph I guess? ;)
 
